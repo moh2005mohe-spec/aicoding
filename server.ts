@@ -1009,9 +1009,15 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`ForgeAI Server fully operational on http://localhost:${PORT}`);
-  });
+  if (process.env.VERCEL !== "1" && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`ForgeAI Server fully operational on http://localhost:${PORT}`);
+    });
+  }
 }
 
-startServer();
+if (process.env.VERCEL !== "1" && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  startServer();
+}
+
+export default app;

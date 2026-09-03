@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/deployments/:id",
+      "destination": "/api"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!api|deployments|assets|favicon|icon).*).*",
+      "destination": "/index.html"
+    }
+  ]
+}
