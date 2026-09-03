@@ -10,7 +10,7 @@
       "destination": "/api"
     },
     {
-      "source": "/((?!api|deployments|assets|favicon|icon).*).*",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
