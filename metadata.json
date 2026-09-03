@@ -1,0 +1,6 @@
+{
+  "name": "ForgeAI",
+  "description": "A production-grade AI-powered application builder that plans, codes, runs, and deploys full-stack applications in an isolated sandbox.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
