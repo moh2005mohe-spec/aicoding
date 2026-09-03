@@ -897,8 +897,11 @@ app.get("/deployments/:id", (req, res) => {
         throw new Error("Module not found: " + fileName);
       }
       
-      // Clean up standard esm imports like 'import React, { useState } from "react"'
+      // Clean up standard esm imports, HTML comments, and class attributes for JSX safety
       const cleaned = code
+        .replace(/<!--[\\s\\S]*?-->/g, '')
+        .replace(/\\bclass="/g, 'className="')
+        .replace(/\\bclass='/g, "className='")
         .replace(/import\\s+[^;]+from\\s+['"]react['"]/g, 'const React = window.React; const { useState, useEffect, useRef, useMemo, useCallback } = React;')
         .replace(/import\\s+[^;]+from\\s+['"]react-dom['"]/g, 'const ReactDOM = window.ReactDOM;')
         .replace(/export\\s+default\\s+function\\s+(\\w+)/g, 'function $1')

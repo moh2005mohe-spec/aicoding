@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   Folder,
-  FolderOpen,
   FileCode,
   Plus,
   Trash2,
@@ -12,20 +11,27 @@ import {
   Settings,
   LockKeyhole,
   Check,
-  X
+  X,
+  History,
+  RotateCcw
 } from "lucide-react";
-import { Project, User } from "../types";
+import { Project, User, ProjectVersion } from "../types";
 
 interface SidebarProps {
-  leftView: "files" | "projects" | "git" | "deployments" | "settings";
+  leftView: "files" | "projects" | "git" | "deployments" | "settings" | "history";
   currentProject: Project | null;
   activeFile: string;
   setActiveFile: (file: string) => void;
   projects: Project[];
   selectProject: (p: Project) => void;
   onCreateProject: () => void;
-  onForkProject: (id: string, e: any) => void;
-  onDeleteProject: (id: string, e: any) => void;
+  onForkProject: (id: string, e: React.MouseEvent) => void;
+  onDeleteProject: (id: string, e: React.MouseEvent) => void;
+  onCreateFile: (fileName: string) => void;
+  onDeleteFile: (fileName: string, e: React.MouseEvent) => void;
+  onSaveEnvVar: (key: string, val: string) => void;
+  onDeleteEnvVar: (key: string) => void;
+  onRestoreVersion: (version: ProjectVersion) => void;
   onGitCommit: () => void;
   onDeployProject: () => void;
   onClose: () => void;
@@ -43,6 +49,11 @@ export default function Sidebar({
   onCreateProject,
   onForkProject,
   onDeleteProject,
+  onCreateFile,
+  onDeleteFile,
+  onSaveEnvVar,
+  onDeleteEnvVar,
+  onRestoreVersion,
   onGitCommit,
   onDeployProject,
   onClose,
@@ -51,23 +62,23 @@ export default function Sidebar({
 }: SidebarProps) {
   const [newEnvKey, setNewEnvKey] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
-  const [envVars, setEnvVars] = useState<Array<{ key: string; val: string }>>([
-    { key: "DATABASE_URL", val: "postgresql://postgres:*****@cloudsql.forgeai.internal/app" },
-    { key: "STRIPE_SECRET_KEY", val: "sk_test_51Nv***********************" }
-  ]);
 
   if (!currentProject) return null;
 
   const handleAddEnv = () => {
     if (!newEnvKey.trim() || !newEnvValue.trim()) return;
-    setEnvVars([...envVars, { key: newEnvKey.trim(), val: newEnvValue.trim() }]);
+    onSaveEnvVar(newEnvKey.trim(), newEnvValue.trim());
     setNewEnvKey("");
     setNewEnvValue("");
   };
 
-  const handleRemoveEnv = (key: string) => {
-    setEnvVars(envVars.filter(e => e.key !== key));
+  const handleCreateFileClick = () => {
+    const newName = prompt("Enter new filename (e.g., utils.js, Component.jsx):");
+    if (!newName || !newName.trim()) return;
+    onCreateFile(newName.trim());
   };
+
+  const envEntries = Object.entries(currentProject.envVars || {});
 
   return (
     <div className={`w-64 border-r flex flex-col transition-colors ${darkMode ? "bg-slate-900 border-slate-800 text-slate-100" : "bg-white border-slate-200/80 text-slate-800"}`}>
@@ -75,10 +86,11 @@ export default function Sidebar({
       <div className={`p-4 border-b flex items-center justify-between ${darkMode ? "border-slate-800" : "border-slate-100"}`}>
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
           {leftView === "files" && "Virtual Filesystem"}
-          {leftView === "projects" && "Saved Workspace"}
+          {leftView === "projects" && "Saved Workspaces"}
           {leftView === "git" && "Git Repository"}
           {leftView === "deployments" && "Deployments"}
           {leftView === "settings" && "Config & Secrets"}
+          {leftView === "history" && "Version Snapshots"}
         </span>
         <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded text-slate-400 transition-colors">
           <X className="w-3.5 h-3.5" />
@@ -95,13 +107,9 @@ export default function Sidebar({
                 <Folder className="w-3.5 h-3.5 text-indigo-600" /> /sandbox
               </span>
               <button
-                onClick={() => {
-                  const newName = prompt("Enter new filename (e.g., helper.js):");
-                  if (!newName) return;
-                  setActiveFile(newName);
-                }}
+                onClick={handleCreateFileClick}
                 className="p-1 hover:bg-indigo-50 hover:text-indigo-600 rounded text-slate-500 transition-colors"
-                title="Create File"
+                title="Create New File"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -109,19 +117,30 @@ export default function Sidebar({
 
             <div className="space-y-1">
               {Object.keys(currentProject.files || {}).map((fName) => (
-                <button
+                <div
                   key={fName}
                   onClick={() => setActiveFile(fName)}
-                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all group ${
                     activeFile === fName
                       ? "bg-indigo-50 text-indigo-600"
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   }`}
                 >
-                  <span className="flex items-center gap-2">
-                    <FileCode className="w-3.5 h-3.5 text-slate-400" /> {fName}
+                  <span className="flex items-center gap-2 truncate">
+                    <FileCode className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">{fName}</span>
                   </span>
-                </button>
+
+                  {fName !== "index.html" && fName !== "App.jsx" && (
+                    <button
+                      onClick={(e) => onDeleteFile(fName, e)}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-all"
+                      title="Delete File"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           </div>
@@ -131,10 +150,11 @@ export default function Sidebar({
         {leftView === "projects" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">Recent Projects</span>
+              <span className="text-xs font-bold text-slate-500">Recent Workspaces</span>
               <button
                 onClick={onCreateProject}
                 className="p-1 hover:bg-indigo-50 hover:text-indigo-600 rounded text-slate-500 transition-colors"
+                title="New Workspace"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -163,14 +183,14 @@ export default function Sidebar({
                       <button
                         onClick={(e) => onForkProject(p.id, e)}
                         className="p-1 hover:bg-slate-100 text-slate-400 hover:text-indigo-600 rounded"
-                        title="Fork Project"
+                        title="Fork Workspace"
                       >
                         <Copy className="w-3 h-3" />
                       </button>
                       <button
                         onClick={(e) => onDeleteProject(p.id, e)}
                         className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded"
-                        title="Delete Project"
+                        title="Delete Workspace"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -179,6 +199,45 @@ export default function Sidebar({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* VERSION HISTORY SNAPSHOTS VIEW */}
+        {leftView === "history" && (
+          <div className="space-y-4">
+            <span className="text-xs font-bold text-slate-500 block">Code Snapshots</span>
+            {currentProject.versions && currentProject.versions.length > 0 ? (
+              <div className="space-y-2">
+                {currentProject.versions.map((ver) => (
+                  <div
+                    key={ver.id}
+                    className={`p-3 rounded-xl border space-y-2 ${
+                      darkMode ? "bg-slate-800/40 border-slate-800" : "bg-white border-slate-100 shadow-sm"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">{ver.name}</span>
+                      <span className="text-[9px] text-slate-400">
+                        {new Date(ver.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Contains {Object.keys(ver.files || {}).length} file(s)
+                    </p>
+                    <button
+                      onClick={() => onRestoreVersion(ver)}
+                      className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Restore Snapshot
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                <p className="text-[11px] text-slate-400">No version snapshots recorded yet.</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -256,7 +315,7 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* CONFIG & SETRETS SETTINGS VIEW */}
+        {/* CONFIG & SECRETS SETTINGS VIEW */}
         {leftView === "settings" && (
           <div className="space-y-5">
             <div className="space-y-2">
@@ -280,20 +339,24 @@ export default function Sidebar({
             <div className="space-y-3">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Environment Variables</span>
               <div className="space-y-2">
-                {envVars.map((env) => (
-                  <div key={env.key} className="p-2 bg-slate-50 rounded-lg flex items-center justify-between border text-xs">
+                {envEntries.map(([key, val]) => (
+                  <div key={key} className="p-2 bg-slate-50 rounded-lg flex items-center justify-between border text-xs">
                     <div className="truncate pr-2">
-                      <div className="text-[10px] font-extrabold text-slate-700">{env.key}</div>
-                      <div className="text-[9px] text-slate-400 truncate">{env.val}</div>
+                      <div className="text-[10px] font-extrabold text-slate-700">{key}</div>
+                      <div className="text-[9px] text-slate-400 truncate">{val}</div>
                     </div>
                     <button
-                      onClick={() => handleRemoveEnv(env.key)}
+                      onClick={() => onDeleteEnvVar(key)}
                       className="text-slate-400 hover:text-rose-600 p-0.5"
+                      title="Delete variable"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
+                {envEntries.length === 0 && (
+                  <p className="text-[10px] text-slate-400 text-center py-2">No environment variables configured.</p>
+                )}
               </div>
 
               <div className="pt-2 border-t space-y-2">
@@ -315,7 +378,7 @@ export default function Sidebar({
                   onClick={handleAddEnv}
                   className="w-full bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-bold py-1.5 rounded-lg transition-colors"
                 >
-                  Add variable
+                  Save Variable
                 </button>
               </div>
             </div>

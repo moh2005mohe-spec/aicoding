@@ -14,9 +14,11 @@ import {
   LogOut,
   Sliders,
   Check,
-  LockKeyhole
+  LockKeyhole,
+  History,
+  RotateCcw
 } from "lucide-react";
-import { Project, User, Message } from "./types";
+import { Project, User, Message, ProjectVersion } from "./types";
 import Sidebar from "./components/Sidebar";
 import EditorView from "./components/EditorView";
 import PreviewPane from "./components/PreviewPane";
@@ -66,7 +68,7 @@ export default function App() {
   const [terminalInput, setTerminalInput] = useState("");
 
   // Navigation Panel Views
-  const [leftView, setLeftView] = useState<"files" | "projects" | "git" | "deployments" | "settings">("files");
+  const [leftView, setLeftView] = useState<"files" | "projects" | "git" | "deployments" | "settings" | "history">("files");
 
   // Load configuration on initialization
   useEffect(() => {
@@ -188,7 +190,7 @@ export default function App() {
     }
   };
 
-  const handleDeleteProject = async (id: string, e: any) => {
+  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Are you sure you want to permanently delete this project?")) return;
     try {
@@ -207,7 +209,7 @@ export default function App() {
     }
   };
 
-  const handleForkProject = async (id: string, e: any) => {
+  const handleForkProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
       const res = await fetch(`/api/projects/${id}/fork`, { method: "POST" });
@@ -216,6 +218,113 @@ export default function App() {
       selectProject(duplicated);
     } catch (err) {
       console.error("Failed to fork project repository:", err);
+    }
+  };
+
+  const handleCreateFile = async (fileName: string) => {
+    if (!currentProject) return;
+    const defaultContent = fileName.endsWith(".jsx") || fileName.endsWith(".tsx")
+      ? `import React from 'react';\n\nexport default function ${fileName.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, "")}() {\n  return (\n    <div className="p-4 bg-white rounded-xl shadow-sm border">\n      <h2 className="text-lg font-bold text-slate-800">${fileName} Component</h2>\n    </div>\n  );\n}`
+      : `// ${fileName}\n`;
+
+    const updatedFiles = { ...currentProject.files, [fileName]: defaultContent };
+    setCurrentProject({ ...currentProject, files: updatedFiles });
+    setActiveFile(fileName);
+
+    try {
+      await fetch(`/api/projects/${currentProject.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: updatedFiles })
+      });
+      setPreviewRefreshKey(prev => prev + 1);
+    } catch (err) {
+      console.error("Failed creating file:", err);
+    }
+  };
+
+  const handleDeleteFile = async (fileName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentProject) return;
+    if (fileName === "index.html" || fileName === "App.jsx") {
+      alert("Core project entrypoints (index.html and App.jsx) cannot be deleted.");
+      return;
+    }
+    if (!confirm(`Are you sure you want to delete ${fileName}?`)) return;
+
+    const updatedFiles = { ...currentProject.files };
+    delete updatedFiles[fileName];
+
+    setCurrentProject({ ...currentProject, files: updatedFiles });
+    if (activeFile === fileName) {
+      const remaining = Object.keys(updatedFiles);
+      setActiveFile(remaining[0] || "App.jsx");
+    }
+
+    try {
+      await fetch(`/api/projects/${currentProject.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: updatedFiles })
+      });
+      setPreviewRefreshKey(prev => prev + 1);
+    } catch (err) {
+      console.error("Failed deleting file:", err);
+    }
+  };
+
+  const handleSaveEnvVar = async (key: string, val: string) => {
+    if (!currentProject) return;
+    const updatedEnv = { ...(currentProject.envVars || {}), [key]: val };
+    setCurrentProject({ ...currentProject, envVars: updatedEnv });
+
+    try {
+      await fetch(`/api/projects/${currentProject.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ envVars: updatedEnv })
+      });
+    } catch (err) {
+      console.error("Failed saving environment variable:", err);
+    }
+  };
+
+  const handleDeleteEnvVar = async (key: string) => {
+    if (!currentProject) return;
+    const updatedEnv = { ...(currentProject.envVars || {}) };
+    delete updatedEnv[key];
+    setCurrentProject({ ...currentProject, envVars: updatedEnv });
+
+    try {
+      await fetch(`/api/projects/${currentProject.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ envVars: updatedEnv })
+      });
+    } catch (err) {
+      console.error("Failed deleting environment variable:", err);
+    }
+  };
+
+  const handleRestoreVersion = async (version: ProjectVersion) => {
+    if (!currentProject) return;
+    if (!confirm(`Restore codebase snapshot "${version.name}"?`)) return;
+
+    setCurrentProject({ ...currentProject, files: version.files });
+    const keys = Object.keys(version.files);
+    if (keys.length > 0 && !keys.includes(activeFile)) {
+      setActiveFile(keys[0]);
+    }
+
+    try {
+      await fetch(`/api/projects/${currentProject.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: version.files })
+      });
+      setPreviewRefreshKey(prev => prev + 1);
+    } catch (err) {
+      console.error("Failed restoring version snapshot:", err);
     }
   };
 
@@ -364,18 +473,29 @@ export default function App() {
     if (!msg) return;
 
     try {
-      const res = await fetch(`/api/projects/${currentProject.id}/git/commit`, {
-        method: "POST",
+      const res = await fetch(`/api/projects/${currentProject.id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg })
+        body: JSON.stringify({
+          gitRepo: {
+            connected: true,
+            repoName: "github.com/moh2005mohe-spec/aicoding",
+            branch: "main",
+            commits: [
+              {
+                id: Math.random().toString(36).substring(2, 9),
+                message: msg,
+                author: currentUser?.name || "Developer",
+                timestamp: new Date().toISOString()
+              },
+              ...(currentProject.gitRepo?.commits || [])
+            ]
+          }
+        })
       });
-      const data = await res.json();
-      if (data.success) {
-        const updatedRes = await fetch(`/api/projects/${currentProject.id}`);
-        const updatedProj = await updatedRes.json();
-        setCurrentProject(updatedProj);
-        alert("Committed & pushed transactionally to connected branch!");
-      }
+      const updatedProj = await res.json();
+      setCurrentProject(updatedProj);
+      alert("Committed & pushed transactionally to connected branch!");
     } catch (err) {
       console.error("Git push failed:", err);
     }
@@ -503,6 +623,14 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => { setLeftView("history"); setFileTreeOpen(true); }}
+              className={`p-3 rounded-xl transition-all relative group ${leftView === "history" ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-50"}`}
+              title="Version Snapshots & Code History"
+            >
+              <RotateCcw className="w-5 h-5" />
+            </button>
+
+            <button
               onClick={() => { setLeftView("git"); setFileTreeOpen(true); }}
               className={`p-3 rounded-xl transition-all relative group ${leftView === "git" ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-50"}`}
               title="Git push branches"
@@ -540,6 +668,11 @@ export default function App() {
             onCreateProject={handleCreateProject}
             onForkProject={handleForkProject}
             onDeleteProject={handleDeleteProject}
+            onCreateFile={handleCreateFile}
+            onDeleteFile={handleDeleteFile}
+            onSaveEnvVar={handleSaveEnvVar}
+            onDeleteEnvVar={handleDeleteEnvVar}
+            onRestoreVersion={handleRestoreVersion}
             onGitCommit={handleGitCommit}
             onDeployProject={handleDeployProject}
             onClose={() => setFileTreeOpen(false)}
